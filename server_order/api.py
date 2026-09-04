@@ -67,12 +67,18 @@ def verify_token(authorization: Optional[str] = Header(None), db: Session = Depe
         raise HTTPException(status_code=401, detail="authorization header required 2")
 
     token = p[1]
+    # 1. Сначала ищем в таблице обычных пользователей (User)
     user_db = db.query(User).filter(User.token == token).first()
+    if user_db:
+        return user_db
 
-    if not user_db:
-        raise  HTTPException(status_code=401, detail="Invalid token")
+    # 2. Если User не найден, ищем в таблице водителей (Driver)
+    driver_db = db.query(Driver).filter(Driver.token == token).first()
+    if driver_db:
+        return driver_db
 
-    return user_db
+    # 3. Если токен не найден ни у кого
+    raise HTTPException(status_code=401, detail="Invalid token")
 
 
 
@@ -155,21 +161,32 @@ def get_driver(driver_id: int, db: Session = Depends(get_db)):
     return driver
 
 
-# Добавьте в api.py после эндпоинта login_user
 
-# Было: def login_driver(driver: DriverCreate, db: Session = Depends(get_db)):
-# Стало:
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+
+
 @app.post("/driver/login", response_model=DriverResponse)
 def login_driver(driver: DriverAuth, db: Session = Depends(get_db)):
     """Авторизация водителя"""
-    # Ищем водителя по телефону
-    driver_db = db.query(Driver).filter(Driver.phone == driver.phone).first()
+    # 1. Очищаем телефон от всех символов, кроме цифр (+, -, пробелы)
+    clean_phone = re.sub(r'\D', '', driver.phone)
+
+    # 2. Приводим к формату 7XXXXXXXXXX, если номер начинается с 8 или введен без кода страны
+    if clean_phone.startswith('8') and len(clean_phone) == 11:
+        clean_phone = '7' + clean_phone[1:]
+    elif len(clean_phone) == 10:
+        clean_phone = '7' + clean_phone
+
+    # 3. Ищем водителя по ОЧИЩЕННОМУ телефону
+    driver_db = db.query(Driver).filter(Driver.phone == clean_phone).first()
     print(driver_db)
 
     if not driver_db:
+        # Безопаснее возвращать одинаковую ошибку и для неверного телефона, и для пароля
         raise HTTPException(status_code=400, detail="Invalid phone or password")
 
-    # Проверяем пароль (убедитесь, что в модели DriverAuth поле называется password_hash)
+    # Проверяем пароль
     if not password_hash.check_password(str(driver_db.password_hash), driver.password_hash):
         raise HTTPException(status_code=400, detail="Invalid phone or password")
 
@@ -200,20 +217,46 @@ def verify_driver_token(authorization: Optional[str] = Header(None), db: Session
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return driver_db
+
+
+import re
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+
+def clean_phone_(phone):
+    # 1. Очищаем телефон от всех символов, кроме цифр (+, -, пробелы и т.д.)
+    clean_phone = re.sub(r'\D', '', phone)
+
+    # 2. Приводим к формату 7XXXXXXXXXX, если номер начинается с 8
+    if clean_phone.startswith('8') and len(clean_phone) == 11:
+        clean_phone = '7' + clean_phone[1:]
+    # Если номер введен без 7 или 8 (10 цифр), добавляем 7 в начало
+    elif len(clean_phone) == 10:
+        clean_phone = '7' + clean_phone
+
+    return clean_phone
+
 @app.post("/drivers", response_model=DriverResponse)
 def create_driver(driver: DriverCreate, db: Session = Depends(get_db)):
     """Создать нового водителя"""
+
+    clean_phone = clean_phone_(driver.phone)
+    if len(clean_phone) != 11 or not clean_phone.startswith('7'):
+        raise HTTPException(status_code=400, detail="Invalid phone format. Expected format: 7XXXXXXXXXX")
+
+    # 3. Ищем существующего водителя с ОЧИЩЕННЫМ номером телефона
     existing = db.query(Driver).filter(
-        (Driver.phone == driver.phone) | (Driver.car_number == driver.car_number)
+        (Driver.phone == clean_phone) | (Driver.car_number == driver.car_number)
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="Driver with this phone or car number already exists")
 
-    # Хешируем пароль и генерируем токен
+    # Подготавливаем данные для сохранения
     driver_data = driver.model_dump()
+    driver_data['phone'] = clean_phone  # Записываем нормализованный телефон
     driver_data['password_hash'] = password_hash.hash_password(driver.password_hash)
     driver_data['token'] = generate_token.generate_simple_rs256_jwt(
-        {'email': driver.phone}  # используем телефон как идентификатор
+        {'email': clean_phone}
     )
 
     db_driver = Driver(**driver_data)
@@ -221,6 +264,7 @@ def create_driver(driver: DriverCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_driver)
     return db_driver
+
 
 @app.put("/drivers/{driver_id}/status")
 def toggle_driver_status(driver_id: int, is_active: bool, db: Session = Depends(get_db)):

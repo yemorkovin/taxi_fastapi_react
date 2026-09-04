@@ -32,7 +32,8 @@ export const authService = {
       if (response.data) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data));
-        console.log(response.data)
+        localStorage.setItem('role', 'user');
+
         return { success: true, data: response.data };
       }
       return { success: false, error: 'Ошибка входа' };
@@ -129,7 +130,6 @@ export const authService = {
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('driver', JSON.stringify(response.data));
                 localStorage.setItem('role', 'driver');
-                console.log('Driver logged in:', response.data);
                 return { success: true, data: response.data };
             }
             return { success: false, error: 'Ошибка входа' };

@@ -14,13 +14,20 @@ const HomePage = () => {
     price: ''
 });
     const [loading, setLoading] = useState(false)
+    const [role, setRole] = useState(null);
+
 
   useEffect(() => {
       const checkAuth = async () => {
         const authenticated = await authService.isAuthenticated();
         setIsAuth(authenticated);
+        if(authenticated){
+            const savedRole = localStorage.getItem('role');
+            setRole(savedRole);
+        }
       };
       checkAuth();
+
     }, []);
 
   const handleCreateOrder = async (e) => {
@@ -36,7 +43,6 @@ const HomePage = () => {
                 return;
             }
 
-            console.log(1)
         }
 
 
@@ -153,10 +159,7 @@ const HomePage = () => {
                 )}
               </button>
 
-              <div className="text-center">
-                <span className="text-muted">Нет аккаунта?</span>{' '}
-                <Link to="/register" className="text-decoration-none">Зарегистрироваться</Link>
-              </div>
+
             </form>
           </div>
         </div>

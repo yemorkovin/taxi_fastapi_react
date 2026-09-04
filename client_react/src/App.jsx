@@ -23,6 +23,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register/driver" element={<RegisterDriverPage />} />
           <Route path="/driver/login" element={<DriverLoginPage />} />
+            <Route path="/driver/dashboard" element={<DriverDashboard />} />
 
           {/* Защищенные маршруты для клиентов */}
 
